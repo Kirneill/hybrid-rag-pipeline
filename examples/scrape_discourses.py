@@ -132,6 +132,9 @@ def discover_urls(session, delay):
                     page_found += 1
 
         print(f"  Found {page_found} new URLs (total: {len(all_urls)})")
+        if page_found == 0:
+            print(f"  No new URLs on page {page_num}, stopping")
+            break
         page_num += 1
         time.sleep(delay)
 

@@ -16,6 +16,7 @@ import argparse
 import io
 import json
 import os
+import pickle
 import re
 import sys
 import textwrap
@@ -117,10 +118,13 @@ class SentenceTransformerEmbeddingFunction(chromadb.EmbeddingFunction):
 # Tokenizer utility
 # ---------------------------------------------------------------------------
 
-_enc = tiktoken.get_encoding("cl100k_base")
+_enc = None
 
 
 def count_tokens(text: str) -> int:
+    global _enc
+    if _enc is None:
+        _enc = tiktoken.get_encoding("cl100k_base")
     return len(_enc.encode(text))
 
 
@@ -140,6 +144,7 @@ class HybridRAG:
         self.top_k = top_k
 
         self.chunks: list[dict] = []
+        self._id_to_chunk: dict[str, dict] = {}
         self.embed_model: Optional[SentenceTransformer] = None
         self.reranker: Optional[CrossEncoder] = None
         self.chroma_collection = None
@@ -185,6 +190,7 @@ class HybridRAG:
                     })
 
         self.chunks = chunks
+        self._id_to_chunk = {c["id"]: c for c in self.chunks}
         return chunks
 
     def _split_document(self, text: str) -> list[str]:
@@ -254,7 +260,7 @@ class HybridRAG:
         # Delete existing collection if it exists, then create fresh
         try:
             client.delete_collection(COLLECTION_NAME)
-        except Exception:
+        except ValueError:
             pass
         collection = client.create_collection(
             name=COLLECTION_NAME,
@@ -297,6 +303,7 @@ class HybridRAG:
 
         self.chroma_collection = collection
         self._build_bm25()
+        self._save_bm25_cache()
         print(f"Index built successfully at {self.db_path}", file=sys.stderr)
 
     def _count_unique_docs(self) -> int:
@@ -323,7 +330,12 @@ class HybridRAG:
             print(f"No index found at {self.db_path}. Run 'build' subcommand first.", file=sys.stderr)
             raise SystemExit(1)
 
-        # Retrieve all chunks from ChromaDB to rebuild BM25 and local chunk list
+        # Try loading BM25 + chunks from pickle cache (fast path)
+        if self._load_bm25_cache():
+            self._id_to_chunk = {c["id"]: c for c in self.chunks}
+            return
+
+        # Fallback: retrieve all chunks from ChromaDB to rebuild BM25 and local chunk list
         count = self.chroma_collection.count()
         result = self.chroma_collection.get(
             include=["documents", "metadatas"],
@@ -343,6 +355,7 @@ class HybridRAG:
             })
 
         self._build_bm25()
+        self._id_to_chunk = {c["id"]: c for c in self.chunks}
 
     # ------------------------------------------------------------------
     # BM25
@@ -352,6 +365,27 @@ class HybridRAG:
         """Build BM25 index from self.chunks."""
         tokenized = [c["content"].lower().split() for c in self.chunks]
         self.bm25 = BM25Okapi(tokenized)
+
+    def _save_bm25_cache(self):
+        """Persist chunks and BM25 tokenized corpus to pickle for fast loading."""
+        cache_path = os.path.join(self.db_path, "bm25_cache.pkl")
+        data = {
+            "chunks": self.chunks,
+            "tokenized": [c["content"].lower().split() for c in self.chunks],
+        }
+        with open(cache_path, "wb") as f:
+            pickle.dump(data, f)
+
+    def _load_bm25_cache(self) -> bool:
+        """Load chunks and BM25 from pickle cache. Returns True on success."""
+        cache_path = os.path.join(self.db_path, "bm25_cache.pkl")
+        if not os.path.isfile(cache_path):
+            return False
+        with open(cache_path, "rb") as f:
+            data = pickle.load(f)
+        self.chunks = data["chunks"]
+        self.bm25 = BM25Okapi(data["tokenized"])
+        return True
 
     # ------------------------------------------------------------------
     # Model initialization
@@ -429,12 +463,11 @@ class HybridRAG:
         """Cross-encoder reranking. Returns (chunk_id, score) pairs."""
         self._init_reranker()
 
-        id_to_chunk = {c["id"]: c for c in self.chunks}
         pairs = []
         valid_ids = []
         for cid in chunk_ids:
-            if cid in id_to_chunk:
-                pairs.append((query, id_to_chunk[cid]["content"]))
+            if cid in self._id_to_chunk:
+                pairs.append((query, self._id_to_chunk[cid]["content"]))
                 valid_ids.append(cid)
 
         scores = self.reranker.predict(pairs)
@@ -462,7 +495,6 @@ class HybridRAG:
         candidate_ids = self.hybrid_search([query], n=20)
 
         # Reranking
-        id_to_chunk = {c["id"]: c for c in self.chunks}
         if use_rerank:
             scored = self.rerank(query, candidate_ids, n=top_k)
         else:
@@ -470,7 +502,7 @@ class HybridRAG:
 
         results = []
         for rank, (cid, score) in enumerate(scored, 1):
-            chunk = id_to_chunk[cid]
+            chunk = self._id_to_chunk[cid]
             results.append({
                 "rank": rank,
                 "title": chunk["title"],
@@ -537,7 +569,6 @@ class HybridRAG:
         timing["search"] = time.time() - t0
 
         # Step 3: Reranking
-        id_to_chunk = {c["id"]: c for c in self.chunks}
         t0 = time.time()
         if self.use_rerank:
             scored = self.rerank(question, candidate_ids, n=self.top_k)
@@ -548,7 +579,7 @@ class HybridRAG:
         top_chunks = []
         sources = []
         for cid, score in scored:
-            chunk = id_to_chunk[cid]
+            chunk = self._id_to_chunk[cid]
             top_chunks.append(chunk)
             sources.append({
                 "title": chunk["title"],
