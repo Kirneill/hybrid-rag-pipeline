@@ -23,7 +23,13 @@ Ranked passages returned to stdout → your LLM agent reasons over them
 ### 1. Install dependencies
 
 ```bash
-pip install chromadb sentence-transformers rank-bm25 tiktoken anthropic numpy requests beautifulsoup4 pymupdf
+pip install chromadb sentence-transformers rank-bm25 tiktoken anthropic numpy
+```
+
+Additional dependencies for the example ingest scripts:
+
+```bash
+pip install requests beautifulsoup4 pymupdf
 ```
 
 ### 2. Prepare your corpus
@@ -35,50 +41,42 @@ The pipeline reads a JSONL file where each line is a JSON object with at least `
 {"title": "Blog Post Title", "slug": "blog-post-title", "source": "website", "date": "2024-03-15", "content": "Full text...", "word_count": 320}
 ```
 
-Helper scripts are included for web scraping and PDF extraction (see [Ingest scripts](#ingest-scripts) below), or you can generate the JSONL from any source.
+Place your JSONL file at `output/corpus.jsonl` (the default path), or set `CORPUS_PATH` in `rag_pipeline.py`.
 
-### 3. Configure paths
+Example ingest scripts for web scraping and PDF extraction are in `examples/`.
 
-Edit the constants at the top of `rag_pipeline.py`:
-
-```python
-CORPUS_PATH = "path/to/your/discourses.jsonl"
-DB_PATH = "path/to/your/chroma_db"
-COLLECTION_NAME = "your_collection"
-```
-
-### 4. Build the index
+### 3. Build the index
 
 ```bash
 python rag_pipeline.py build
 ```
 
-This embeds all chunks with `all-mpnet-base-v2` and stores them in ChromaDB + BM25. Takes ~30 seconds for 500 chunks.
+Embeds all chunks with `all-mpnet-base-v2` and stores them in ChromaDB + BM25. Takes ~30 seconds for 500 chunks.
 
-### 5. Search
+### 4. Search
 
 ```bash
 # Human-readable output
 python rag_pipeline.py search "What does the author say about discipline?"
 
 # JSON for programmatic use
-python rag_pipeline.py search "meditation" --json --top-k 8
+python rag_pipeline.py search "discipline" --json --top-k 8
 
 # Fast mode (skip cross-encoder reranking)
-python rag_pipeline.py search "truth" --no-rerank
+python rag_pipeline.py search "discipline" --no-rerank
 ```
 
 ## Using with CLI LLM agents
 
-The `search` command needs no API key — it runs entirely locally. This makes it a perfect tool for any CLI-based LLM agent:
+The `search` command needs no API key — it runs entirely locally. This makes it a tool for any CLI-based LLM agent:
 
-**Claude Code / opencode**: Just ask your question and tell the agent to search the pipeline:
+**Claude Code / opencode / aider**: Ask your question and the agent runs `search`, reads the retrieved passages, and answers using them as context.
 
 ```
 > What does the author think about self-improvement? Search the knowledge base.
 ```
 
-The agent runs `python rag_pipeline.py search "self-improvement"`, reads the retrieved passages, and answers using them as context.
+The agent runs `python rag_pipeline.py search "self-improvement"`, reads the passages, and reasons over them.
 
 **JSON mode** (`--json`) outputs structured results that agents can parse programmatically — each result includes `rank`, `title`, `source`, `date`, `relevance_score`, and `content`.
 
@@ -113,46 +111,39 @@ python rag_pipeline.py chat                           # Interactive Q&A (needs A
 - 100-token overlap between chunks prevents context loss at boundaries
 - Falls back to sentence-level splitting for paragraphs without line breaks
 
-## Ingest scripts
+## Example ingest scripts
 
-Two helper scripts are included for building a corpus from web pages and PDFs. These were built for a specific use case but can be adapted for any content.
+Two example scripts in `examples/` show how to build a corpus from web pages and PDFs. Adapt them for your own content.
 
-### `scrape_discourses.py` — Web scraper
+### `examples/scrape_discourses.py` — Web scraper
 
 Scrapes articles from a paginated WordPress category page. Outputs individual markdown files with YAML frontmatter + a compiled JSONL and HTML book.
 
 ```bash
-python scrape_discourses.py --dry-run        # Discover URLs only
-python scrape_discourses.py                  # Full scrape
-python scrape_discourses.py --limit 5        # Test with 5 posts
-python scrape_discourses.py --force          # Re-scrape existing files
+python examples/scrape_discourses.py --dry-run    # Discover URLs only
+python examples/scrape_discourses.py              # Full scrape
+python examples/scrape_discourses.py --limit 5    # Test with 5 posts
 ```
 
-### `process_books.py` — PDF book processor
+### `examples/process_books.py` — PDF book processor
 
-Extracts chapters from PDF books using either embedded TOC metadata or text-based table of contents parsing. Integrates extracted chapters into the unified corpus alongside web-scraped content.
+Extracts chapters from PDF books using either embedded TOC metadata or text-based table of contents parsing. Integrates extracted chapters into a unified corpus.
 
-Both scripts output to `output/` with this structure:
+Both scripts output to `output/`:
 
 ```
 output/
-  posts/                          # Individual markdown files
-    2024-01-01_chapter-title.md
-    ...
-  discourses.jsonl                # All records, one per line (RAG input)
-  manifest.json                   # Metadata index
-  kapil_gupta_discourses.html     # Compiled readable HTML book
+  posts/                    # Individual markdown files
+  corpus.jsonl              # All records, one per line (RAG input)
+  manifest.json             # Metadata index
 ```
 
 ## Adapting for your own content
 
 1. **Generate a JSONL file** with your documents. Each line needs `title`, `slug`, `source`, `content` at minimum.
-2. **Update `CORPUS_PATH`** and `DB_PATH` in `rag_pipeline.py`.
-3. **Update `COLLECTION_NAME`** to something descriptive.
-4. **Update `SYSTEM_PROMPT`** in `rag_pipeline.py` if using chat mode — tailor it to your domain.
-5. Run `python rag_pipeline.py build`, then `search`.
-
-The scraper and book processor are optional — use them if your sources are web articles or PDFs, otherwise just produce the JSONL directly.
+2. Place it at `output/corpus.jsonl` or update `CORPUS_PATH` in `rag_pipeline.py`.
+3. Optionally update `COLLECTION_NAME` and `SYSTEM_PROMPT` for your domain.
+4. Run `python rag_pipeline.py build`, then `search`.
 
 ## Requirements
 

@@ -1,5 +1,5 @@
 """
-Hybrid RAG pipeline for Q&A over Kapil Gupta's philosophical corpus.
+Hybrid RAG pipeline for Q&A over any document corpus.
 
 Architecture:
     Query → Query Expansion (LLM) → Hybrid Search (Vector + BM25)
@@ -10,7 +10,6 @@ Usage:
     python rag_pipeline.py search "query"           # Search-only (no API key needed)
     python rag_pipeline.py search "query" --json    # JSON output
     python rag_pipeline.py chat                     # Interactive Q&A with LLM
-    python rag_pipeline.py --build                  # Alias for build (backward compat)
 """
 
 import argparse
@@ -37,9 +36,9 @@ from sentence_transformers import CrossEncoder, SentenceTransformer
 # Constants
 # ---------------------------------------------------------------------------
 
-CORPUS_PATH = "F:/CLAUDE/kapil-gupta-discourses/output/discourses.jsonl"
-DB_PATH = "F:/CLAUDE/kapil-gupta-discourses/chroma_db"
-COLLECTION_NAME = "kapil_gupta"
+CORPUS_PATH = os.path.join(os.path.dirname(__file__), "output", "corpus.jsonl")
+DB_PATH = os.path.join(os.path.dirname(__file__), "chroma_db")
+COLLECTION_NAME = "default"
 
 EMBED_MODEL_NAME = "all-mpnet-base-v2"
 RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -50,24 +49,23 @@ SPLIT_CHUNK_TOKENS = 800
 OVERLAP_TOKENS = 100
 
 QUERY_EXPANSION_PROMPT = textwrap.dedent("""\
-    Given this question about Kapil Gupta's philosophical writings, generate \
-    exactly 2 alternative phrasings that might match relevant passages. Return \
-    ONLY the 2 alternatives, one per line, no numbering or bullets.
+    Given this question about a collection of writings, generate exactly 2 \
+    alternative phrasings that might match relevant passages. Return ONLY \
+    the 2 alternatives, one per line, no numbering or bullets.
 
     Question: {query}""")
 
 SYSTEM_PROMPT = textwrap.dedent("""\
-    You are a knowledgeable assistant answering questions about Kapil Gupta's \
-    philosophical writings. You have been given relevant passages from his \
-    books and discourses.
+    You are a knowledgeable assistant answering questions based on a curated \
+    collection of writings. You have been given relevant passages retrieved \
+    from the corpus.
 
     Rules:
     - Answer based ONLY on the provided context passages. Do not use prior knowledge.
     - Quote specific phrases from the passages when they directly answer the question.
     - If the context doesn't contain enough information to fully answer, say so explicitly.
-    - Cite which source each point comes from (e.g., "In Direct Truth, he writes...").
-    - Keep answers concise but thorough. Aim for 2-4 paragraphs.
-    - Capture Kapil Gupta's distinctive voice and philosophy accurately.""")
+    - Cite which source each point comes from (e.g., title and source name).
+    - Keep answers concise but thorough. Aim for 2-4 paragraphs.""")
 
 # ANSI color helpers
 _BOLD = "\033[1m"
@@ -687,7 +685,7 @@ def _cmd_chat(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Kapil Gupta RAG Pipeline — hybrid search over philosophical corpus"
+        description="Hybrid RAG Pipeline — search any document corpus with vector + BM25"
     )
     # Backward compat: --build still works as a top-level flag
     parser.add_argument(
