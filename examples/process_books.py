@@ -7,6 +7,7 @@ against existing website discourses, and rebuilds unified corpus files.
 Dependencies: pymupdf (import fitz), stdlib only otherwise.
 """
 
+import argparse
 import datetime
 import html
 import json
@@ -15,8 +16,11 @@ import re
 
 import fitz
 
-PDF_DIR = "G:/My Drive/PDF/Gupta/"
-OUTPUT_DIR = "F:/CLAUDE/kapil-gupta-discourses/output/"
+DEFAULT_PDF_DIR = "G:/My Drive/PDF/Gupta/"
+DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "output")
+
+PDF_DIR = DEFAULT_PDF_DIR
+OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 POSTS_DIR = os.path.join(OUTPUT_DIR, "posts")
 
 # Book prefixes for filename matching
@@ -642,9 +646,9 @@ def load_all_posts():
 
 
 def write_jsonl(records):
-    """Write discourses.jsonl with source field."""
+    """Write corpus.jsonl with source field."""
     scraped_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    jsonl_path = os.path.join(OUTPUT_DIR, "discourses.jsonl")
+    jsonl_path = os.path.join(OUTPUT_DIR, "corpus.jsonl")
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for rec in records:
             obj = {
@@ -812,6 +816,25 @@ def write_html_book(records):
 # ---------------------------------------------------------------------------
 
 def main():
+    global PDF_DIR, OUTPUT_DIR, POSTS_DIR
+
+    parser = argparse.ArgumentParser(description="Process PDF books into RAG corpus")
+    parser.add_argument("--pdf-dir", default=DEFAULT_PDF_DIR, help="Directory containing PDF files")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Output directory")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
+    args = parser.parse_args()
+
+    PDF_DIR = os.path.abspath(args.pdf_dir)
+    OUTPUT_DIR = os.path.abspath(args.output_dir)
+    POSTS_DIR = os.path.join(OUTPUT_DIR, "posts")
+
+    if args.dry_run:
+        print(f"PDF directory: {PDF_DIR}")
+        print(f"Output directory: {OUTPUT_DIR}")
+        print(f"Posts directory: {POSTS_DIR}")
+        print("\n--dry-run specified, exiting.")
+        return
+
     os.makedirs(POSTS_DIR, exist_ok=True)
 
     # Step 1: Process each book

@@ -41,11 +41,24 @@ The pipeline reads a JSONL file where each line is a JSON object with at least `
 {"title": "Blog Post Title", "slug": "blog-post-title", "source": "website", "date": "2024-03-15", "content": "Full text...", "word_count": 320}
 ```
 
-Place your JSONL file at `output/corpus.jsonl` (the default path), or set `CORPUS_PATH` in `rag_pipeline.py`.
+Place your JSONL file at `output/corpus.jsonl` (the default path), or configure the path via `rag_config.json`.
 
 Example ingest scripts for web scraping and PDF extraction are in `examples/`.
 
-### 3. Build the index
+### 3. Configure paths
+
+Create a `rag_config.json` in the project root (see `rag_config.example.json`):
+
+```json
+{
+    "corpus_path": "output/corpus.jsonl",
+    "collection_name": "my_collection"
+}
+```
+
+Only include the settings you want to override — all fields are optional.
+
+### 4. Build the index
 
 ```bash
 python rag_pipeline.py build
@@ -53,7 +66,7 @@ python rag_pipeline.py build
 
 Embeds all chunks with `all-mpnet-base-v2` and stores them in ChromaDB + BM25. Takes ~30 seconds for 500 chunks.
 
-### 4. Search
+### 5. Search
 
 ```bash
 # Human-readable output
@@ -141,8 +154,8 @@ output/
 ## Adapting for your own content
 
 1. **Generate a JSONL file** with your documents. Each line needs `title`, `slug`, `source`, `content` at minimum.
-2. Place it at `output/corpus.jsonl` or update `CORPUS_PATH` in `rag_pipeline.py`.
-3. Optionally update `COLLECTION_NAME` and `SYSTEM_PROMPT` for your domain.
+2. Create a `rag_config.json` with your paths (see `rag_config.example.json`).
+3. Optionally update `SYSTEM_PROMPT` in `rag_pipeline.py` for your domain.
 4. Run `python rag_pipeline.py build`, then `search`.
 
 ## Requirements

@@ -1,0 +1,11 @@
+{
+    "corpus_path": "output/corpus.jsonl",
+    "db_path": "chroma_db",
+    "collection_name": "default",
+    "embed_model": "all-mpnet-base-v2",
+    "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "llm_model": "claude-sonnet-4-6",
+    "max_chunk_tokens": 1500,
+    "split_chunk_tokens": 800,
+    "overlap_tokens": 100
+}

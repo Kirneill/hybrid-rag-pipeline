@@ -4,7 +4,7 @@ https://www.kapilguptamd.com/category/discourses/
 
 Outputs:
   - Individual markdown files with YAML frontmatter
-  - discourses.jsonl (one JSON object per line)
+  - corpus.jsonl (one JSON object per line)
   - kapil_gupta_discourses.html (self-contained HTML book)
   - manifest.json
 
@@ -325,9 +325,9 @@ def load_all_posts_from_disk(posts_dir):
 
 
 def write_jsonl(output_dir, records):
-    """Write discourses.jsonl from records."""
+    """Write corpus.jsonl from records."""
     scraped_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    jsonl_path = os.path.join(output_dir, "discourses.jsonl")
+    jsonl_path = os.path.join(output_dir, "corpus.jsonl")
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for rec in records:
             obj = {

@@ -48,6 +48,27 @@ MAX_CHUNK_TOKENS = 1500
 SPLIT_CHUNK_TOKENS = 800
 OVERLAP_TOKENS = 100
 
+
+def _load_config():
+    """Load optional config from rag_config.json alongside this script."""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rag_config.json")
+    if not os.path.isfile(config_path):
+        return {}
+    with open(config_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+_config = _load_config()
+CORPUS_PATH = _config.get("corpus_path", CORPUS_PATH)
+DB_PATH = _config.get("db_path", DB_PATH)
+COLLECTION_NAME = _config.get("collection_name", COLLECTION_NAME)
+EMBED_MODEL_NAME = _config.get("embed_model", EMBED_MODEL_NAME)
+RERANK_MODEL_NAME = _config.get("rerank_model", RERANK_MODEL_NAME)
+LLM_MODEL = _config.get("llm_model", LLM_MODEL)
+MAX_CHUNK_TOKENS = _config.get("max_chunk_tokens", MAX_CHUNK_TOKENS)
+SPLIT_CHUNK_TOKENS = _config.get("split_chunk_tokens", SPLIT_CHUNK_TOKENS)
+OVERLAP_TOKENS = _config.get("overlap_tokens", OVERLAP_TOKENS)
+
 QUERY_EXPANSION_PROMPT = textwrap.dedent("""\
     Given this question about a collection of writings, generate exactly 2 \
     alternative phrasings that might match relevant passages. Return ONLY \
@@ -107,7 +128,7 @@ def count_tokens(text: str) -> int:
 # Main RAG class
 # ---------------------------------------------------------------------------
 
-class KapilGuptaRAG:
+class HybridRAG:
     def __init__(
         self,
         corpus_path: str = CORPUS_PATH,
@@ -600,13 +621,13 @@ def _format_search_results(results: list[dict]) -> str:
 
 def _cmd_build(args):
     """Handler for the 'build' subcommand."""
-    rag = KapilGuptaRAG()
+    rag = HybridRAG()
     rag.build_index()
 
 
 def _cmd_search(args):
     """Handler for the 'search' subcommand."""
-    rag = KapilGuptaRAG(top_k=args.top_k)
+    rag = HybridRAG(top_k=args.top_k)
     rag.use_rerank = not args.no_rerank
     rag.load_index()
     results = rag.search(args.query, top_k=args.top_k, use_rerank=not args.no_rerank)
@@ -619,7 +640,7 @@ def _cmd_search(args):
 
 def _cmd_chat(args):
     """Handler for the 'chat' subcommand (interactive Q&A with LLM)."""
-    rag = KapilGuptaRAG(top_k=args.top_k)
+    rag = HybridRAG(top_k=args.top_k)
     rag.use_expansion = not args.no_expansion
     rag.use_rerank = not args.no_rerank
 
@@ -627,7 +648,7 @@ def _cmd_chat(args):
     n_docs = rag._count_unique_docs()
     n_chunks = len(rag.chunks)
 
-    print(f"\n{_BOLD}Kapil Gupta Knowledge Base{_RESET} "
+    print(f"\n{_BOLD}Knowledge Base{_RESET} "
           f"({n_docs} documents, {n_chunks} chunks)")
     print("Type your question, or 'quit' to exit.\n")
 
