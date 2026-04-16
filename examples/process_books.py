@@ -485,18 +485,22 @@ def process_transcript():
 # Save chapters to disk
 # ---------------------------------------------------------------------------
 
-def save_chapters(chapters, source, source_slug):
-    """Save extracted chapters as markdown files. Returns list of saved filenames."""
+def save_chapters(chapters, source, source_slug, dry_run=False):
+    """Save extracted chapters as markdown files. Returns list of saved filenames.
+
+    When dry_run=True, builds the filename list but does not write files.
+    """
     saved = []
     for i, (title, paragraphs) in enumerate(chapters, 1):
         title_slug = slugify(title)
         if not title_slug:
             title_slug = f"chapter-{i}"
         filename = book_md_filename(source_slug, i, title_slug)
-        md_content = build_book_markdown(title, title_slug, source, paragraphs)
-        filepath = os.path.join(POSTS_DIR, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(md_content)
+        if not dry_run:
+            md_content = build_book_markdown(title, title_slug, source, paragraphs)
+            filepath = os.path.join(POSTS_DIR, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(md_content)
         saved.append(filename)
     return saved
 
@@ -505,10 +509,11 @@ def save_chapters(chapters, source, source_slug):
 # Deduplication
 # ---------------------------------------------------------------------------
 
-def deduplicate_website_vs_collection(collection_chapters):
+def deduplicate_website_vs_collection(collection_chapters, dry_run=False):
     """Remove website .md files that overlap with Complete Collection chapters.
 
     Returns (replaced_count, kept_website_count).
+    When dry_run=True, counts matches but does not delete files.
     """
     # Build mapping of normalized title -> filepath for website files
     website_files = {}
@@ -542,7 +547,8 @@ def deduplicate_website_vs_collection(collection_chapters):
         collection_norms.add(norm)
         if norm in website_files:
             old_path = website_files[norm]
-            os.remove(old_path)
+            if not dry_run:
+                os.remove(old_path)
             replaced += 1
 
     kept = len(website_files) - replaced
@@ -553,8 +559,11 @@ def deduplicate_website_vs_collection(collection_chapters):
 # Add source: website to remaining website files
 # ---------------------------------------------------------------------------
 
-def add_source_to_website_files():
-    """Add source: website to existing website .md files that lack a source field."""
+def add_source_to_website_files(dry_run=False):
+    """Add source: website to existing website .md files that lack a source field.
+
+    When dry_run=True, counts files that would be updated but does not write.
+    """
     updated = 0
     for fname in os.listdir(POSTS_DIR):
         if not fname.endswith(".md"):
@@ -571,17 +580,18 @@ def add_source_to_website_files():
         if "source" in metadata:
             continue
 
-        # Insert source: website after the author: line
-        lines = content.split("\n")
-        new_lines = []
-        for line in lines:
-            new_lines.append(line)
-            if line.startswith("author:"):
-                new_lines.append("source: website")
-        new_content = "\n".join(new_lines)
+        if not dry_run:
+            # Insert source: website after the author: line
+            lines = content.split("\n")
+            new_lines = []
+            for line in lines:
+                new_lines.append(line)
+                if line.startswith("author:"):
+                    new_lines.append("source: website")
+            new_content = "\n".join(new_lines)
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(new_content)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(new_content)
         updated += 1
 
     return updated
@@ -828,12 +838,10 @@ def main():
     OUTPUT_DIR = os.path.abspath(args.output_dir)
     POSTS_DIR = os.path.join(OUTPUT_DIR, "posts")
 
-    if args.dry_run:
-        print(f"PDF directory: {PDF_DIR}")
-        print(f"Output directory: {OUTPUT_DIR}")
-        print(f"Posts directory: {POSTS_DIR}")
-        print("\n--dry-run specified, exiting.")
-        return
+    dry_run = args.dry_run
+
+    if dry_run:
+        print("[DRY RUN] No files will be written or deleted.\n")
 
     os.makedirs(POSTS_DIR, exist_ok=True)
 
@@ -854,8 +862,11 @@ def main():
     print("STEP 2: Deduplicate website vs Complete Collection")
     print("=" * 60)
 
-    replaced, kept = deduplicate_website_vs_collection(complete_collection_chapters)
-    print(f"  Replaced {replaced} website files with Complete Collection versions")
+    replaced, kept = deduplicate_website_vs_collection(
+        complete_collection_chapters, dry_run=dry_run,
+    )
+    prefix = "[DRY RUN] Would replace" if dry_run else "Replaced"
+    print(f"  {prefix} {replaced} website files with Complete Collection versions")
     print(f"  Kept {kept} website-only files")
 
     # Step 3: Save book chapters as markdown
@@ -864,24 +875,34 @@ def main():
     print("STEP 3: Save book chapters as markdown")
     print("=" * 60)
 
+    verb = "[DRY RUN] Would write" if dry_run else "Saved"
+
     saved_masters = save_chapters(
-        masters_chapters, "masters_secret_whispers", "masters-secret-whispers"
+        masters_chapters, "masters_secret_whispers", "masters-secret-whispers",
+        dry_run=dry_run,
     )
-    print(f"  Master's Secret Whispers: {len(saved_masters)} files")
+    print(f"  Master's Secret Whispers: {verb} {len(saved_masters)} files")
 
-    saved_atmamun = save_chapters(atmamun_chapters, "atmamun", "atmamun")
-    print(f"  Atmamun: {len(saved_atmamun)} files")
+    saved_atmamun = save_chapters(
+        atmamun_chapters, "atmamun", "atmamun", dry_run=dry_run,
+    )
+    print(f"  Atmamun: {verb} {len(saved_atmamun)} files")
 
-    saved_direct = save_chapters(direct_truth_chapters, "direct_truth", "direct-truth")
-    print(f"  Direct Truth: {len(saved_direct)} files")
+    saved_direct = save_chapters(
+        direct_truth_chapters, "direct_truth", "direct-truth", dry_run=dry_run,
+    )
+    print(f"  Direct Truth: {verb} {len(saved_direct)} files")
 
     saved_collection = save_chapters(
-        complete_collection_chapters, "complete_collection", "complete-collection"
+        complete_collection_chapters, "complete_collection", "complete-collection",
+        dry_run=dry_run,
     )
-    print(f"  Complete Collection: {len(saved_collection)} files")
+    print(f"  Complete Collection: {verb} {len(saved_collection)} files")
 
-    saved_transcript = save_chapters(transcript_chapters, "transcript", "transcript")
-    print(f"  Transcript: {len(saved_transcript)} files")
+    saved_transcript = save_chapters(
+        transcript_chapters, "transcript", "transcript", dry_run=dry_run,
+    )
+    print(f"  Transcript: {verb} {len(saved_transcript)} files")
 
     # Step 4: Add source: website to remaining website files
     print()
@@ -889,21 +910,28 @@ def main():
     print("STEP 4: Add source field to website files")
     print("=" * 60)
 
-    updated = add_source_to_website_files()
-    print(f"  Updated {updated} website files with source: website")
+    updated = add_source_to_website_files(dry_run=dry_run)
+    prefix = "[DRY RUN] Would update" if dry_run else "Updated"
+    print(f"  {prefix} {updated} website files with source: website")
 
-    # Step 5: Rebuild unified corpus
-    print()
-    print("=" * 60)
-    print("STEP 5: Rebuild unified corpus")
-    print("=" * 60)
+    if dry_run:
+        print()
+        print("=" * 60)
+        print("[DRY RUN] Skipping Step 5 (rebuild unified corpus)")
+        print("=" * 60)
+    else:
+        # Step 5: Rebuild unified corpus
+        print()
+        print("=" * 60)
+        print("STEP 5: Rebuild unified corpus")
+        print("=" * 60)
 
-    records = load_all_posts()
-    print(f"  Loaded {len(records)} total posts")
+        records = load_all_posts()
+        print(f"  Loaded {len(records)} total posts")
 
-    write_jsonl(records)
-    write_manifest(records)
-    write_html_book(records)
+        write_jsonl(records)
+        write_manifest(records)
+        write_html_book(records)
 
     # Summary
     print()

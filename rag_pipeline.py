@@ -15,6 +15,7 @@ Usage:
 import argparse
 import io
 import json
+import logging
 import os
 import pickle
 import re
@@ -22,6 +23,8 @@ import sys
 import textwrap
 import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 if sys.stdout.encoding and sys.stdout.encoding.lower().replace("-", "") != "utf8":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -249,9 +252,9 @@ class HybridRAG:
         """Embed all chunks and store in ChromaDB. Also builds BM25 index."""
         self._init_embed_model()
 
-        print(f"Loading corpus from {self.corpus_path}...", file=sys.stderr)
+        logger.info("Loading corpus from %s...", self.corpus_path)
         chunks = self.load_corpus()
-        print(f"  {len(chunks)} chunks from {self._count_unique_docs()} documents", file=sys.stderr)
+        logger.info("  %d chunks from %d documents", len(chunks), self._count_unique_docs())
 
         # Create/reset ChromaDB collection
         client = chromadb.PersistentClient(path=self.db_path)
@@ -271,7 +274,7 @@ class HybridRAG:
         # Embed and add in batches
         batch_size = 64
         total = len(chunks)
-        print(f"Embedding and indexing {total} chunks...", file=sys.stderr)
+        logger.info("Embedding and indexing %d chunks...", total)
 
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
@@ -299,12 +302,12 @@ class HybridRAG:
                 metadatas=metadatas,
                 embeddings=embedding_list,
             )
-            print(f"  Indexed {end}/{total} chunks", file=sys.stderr)
+            logger.info("  Indexed %d/%d chunks", end, total)
 
         self.chroma_collection = collection
         self._build_bm25()
         self._save_bm25_cache()
-        print(f"Index built successfully at {self.db_path}", file=sys.stderr)
+        logger.info("Index built successfully at %s", self.db_path)
 
     def _count_unique_docs(self) -> int:
         """Count unique document titles in chunks."""
@@ -327,7 +330,7 @@ class HybridRAG:
                 embedding_function=embed_fn,
             )
         except Exception:
-            print(f"No index found at {self.db_path}. Run 'build' subcommand first.", file=sys.stderr)
+            logger.error("No index found at %s. Run 'build' subcommand first.", self.db_path)
             raise SystemExit(1)
 
         # Try loading BM25 + chunks from pickle cache (fast path)
@@ -393,19 +396,19 @@ class HybridRAG:
 
     def _init_embed_model(self):
         if self.embed_model is None:
-            print(f"Loading embedding model ({EMBED_MODEL_NAME})...", file=sys.stderr)
+            logger.info("Loading embedding model (%s)...", EMBED_MODEL_NAME)
             self.embed_model = SentenceTransformer(EMBED_MODEL_NAME)
 
     def _init_reranker(self):
         if self.reranker is None:
-            print(f"Loading reranking model ({RERANK_MODEL_NAME})...", file=sys.stderr)
+            logger.info("Loading reranking model (%s)...", RERANK_MODEL_NAME)
             self.reranker = CrossEncoder(RERANK_MODEL_NAME)
 
     def _init_llm_client(self):
         if self.llm_client is None:
             api_key = os.environ.get("ANTHROPIC_API_KEY")
             if not api_key:
-                print("Error: ANTHROPIC_API_KEY environment variable is not set.", file=sys.stderr)
+                logger.error("ANTHROPIC_API_KEY environment variable is not set.")
                 raise SystemExit(1)
             self.llm_client = anthropic.Anthropic()
 
@@ -485,6 +488,9 @@ class HybridRAG:
 
         No LLM API key required. Each result dict contains:
             rank, title, source, date, relevance_score, content
+
+        Note: Query expansion (use_expansion) only applies to the chat/query()
+        pipeline. This method always searches with the original query only.
         """
         if top_k is None:
             top_k = self.top_k
@@ -736,6 +742,12 @@ def _cmd_chat(args):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=sys.stderr,
+    )
+
     parser = argparse.ArgumentParser(
         description="Hybrid RAG Pipeline — search any document corpus with vector + BM25"
     )
